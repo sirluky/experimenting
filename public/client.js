@@ -1,42 +1,66 @@
-// client-side js
-// run by the browser each time your view template is loaded
+function urlBase64ToUint8Array(base64String) {
+  var padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  var base64 = (base64String + padding).replace(/\-/g, "+").replace(/_/g, "/");
 
-console.log("hello world :o");
+  var rawData = window.atob(base64);
+  var outputArray = new Uint8Array(rawData.length);
 
-// our default array of dreams
-const dreams = [
-  "Find and count some sheep",
-  "Climb a really tall mountain",
-  "Wash the dishes"
-];
+  for (var i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
 
-// define variables that reference elements on our page
-const dreamsList = document.getElementById("dreams");
-const dreamsForm = document.forms[0];
-const dreamInput = dreamsForm.elements["dream"];
+navigator.serviceWorker.register("service-worker.js");
 
-// a helper function that creates a list item for a given dream
-const appendNewDream = function(dream) {
-  const newListItem = document.createElement("li");
-  newListItem.innerHTML = dream;
-  dreamsList.appendChild(newListItem);
-};
+navigator.serviceWorker.ready
+  .then(function(registration) {
+    return registration.pushManager
+      .getSubscription()
+      .then(async function(subscription) {
+        if (subscription) {
+          console.log(subscription);
+          return subscription;
+        }
 
-// iterate through every dream and add it to our page
-dreams.forEach(function(dream) {
-  appendNewDream(dream);
-});
+        const response = await fetch("./vapidPublicKey");
+        const vapidPublicKey = await response.text();
 
-// listen for the form to be submitted and add a new dream when it is
-dreamsForm.onsubmit = function(event) {
-  // stop our form submission from refreshing the page
-  event.preventDefault();
+        const convertedVapidKey = urlBase64ToUint8Array(vapidPublicKey);
 
-  // get dream value and add it to the list
-  dreams.push(dreamInput.value);
-  appendNewDream(dreamInput.value);
+        return registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: convertedVapidKey
+        });
+      });
+  })
+  .then(function(subscription) {
+    fetch("./register", {
+      method: "post",
+      headers: {
+        "Content-type": "application/json"
+      },
+      body: JSON.stringify({
+        subscription: subscription
+      })
+    });
 
-  // reset form
-  dreamInput.value = "";
-  dreamInput.focus();
-};
+    document.getElementById("notifyMe").onclick = function() {
+      const payload = "Hello People"; //document.getElementById("notification-payload").value;
+      const delay = 1; //document.getElementById("notification-delay").value;
+      const ttl = 0; //document.getElementById("notification-ttl").value;
+
+      fetch("./sendNotification", {
+        method: "post",
+        headers: {
+          "Content-type": "application/json"
+        },
+        body: JSON.stringify({
+          subscription: subscription,
+          payload: payload,
+          delay: delay,
+          ttl: ttl
+        })
+      });
+    };
+  });
